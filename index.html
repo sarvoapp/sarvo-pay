@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SARVO Membership</title>
+<style>
+  :root{--bg:#ffffff;--surface:#f5f7f8;--line:#e3e8ea;--fg:#101a1c;--muted:#5c6b6e;
+        --accent:#0f766e;--accent-dark:#0b5a54;--danger:#c2410c;--ok:#15803d}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:440px;margin:0 auto;padding:24px max(16px,env(safe-area-inset-left)) 48px}
+  h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:14px;margin:0 0 24px}
+  label{display:block;font-size:13px;color:var(--muted);margin:16px 0 6px}
+  input[type=text],input[type=email],input[type=file]{width:100%;padding:13px 14px;
+       border:1px solid var(--line);border-radius:10px;font-size:16px;background:#fff;color:var(--fg)}
+  input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+  button{width:100%;padding:14px;border:0;border-radius:10px;background:var(--accent);
+       color:#fff;font-size:16px;font-weight:600;cursor:pointer;margin-top:16px}
+  button:disabled{opacity:.5;cursor:default}
+  button.alt{background:#fff;color:var(--accent);border:1.5px solid var(--accent)}
+  button.link{background:none;color:var(--muted);font-weight:400;font-size:14px;margin-top:10px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px}
+  .plan{display:flex;justify-content:space-between;align-items:center;gap:12px;
+        background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;cursor:pointer}
+  .plan[aria-selected=true]{border-color:var(--accent);background:#f0faf8}
+  .plan b{font-size:17px}
+  .plan .tax{color:var(--muted);font-size:12px;display:block;margin-top:2px}
+  .amt{font-size:18px;font-weight:700;white-space:nowrap}
+  .status{font-size:14px}
+  .status .big{font-size:17px;font-weight:600;display:block;margin-bottom:2px}
+  .err{color:var(--danger);font-size:14px;margin-top:12px;min-height:20px}
+  .ok{color:var(--ok)}
+  #qr{display:flex;justify-content:center;padding:16px;background:#fff;border-radius:12px;border:1px solid var(--line)}
+  .upi{text-align:center;font-size:14px;color:var(--muted);margin-top:10px;word-break:break-all}
+  .hide{display:none}
+  .foot{margin-top:28px;font-size:12px;color:var(--muted);text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div id="s_login">
+    <h1>SARVO Membership</h1>
+    <p class="sub">Sign in with the email you use in the SARVO app.</p>
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="email" placeholder="you@gmail.com">
+    <button id="b_send">Send code</button>
+    <div class="err" id="e_login"></div>
+  </div>
+
+  <div id="s_code" class="hide">
+    <h1>Enter the code</h1>
+    <p class="sub">We sent an 8-digit code to <span id="who"></span>.</p>
+    <label for="code">Code</label>
+    <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="12345678">
+    <button id="b_verify">Verify</button>
+    <button class="link" id="b_back">Use a different email</button>
+    <div class="err" id="e_code"></div>
+  </div>
+
+  <div id="s_main" class="hide">
+    <h1 id="hello">Membership</h1>
+    <div class="card status" id="status"></div>
+    <div id="pending" class="card hide"></div>
+    <div id="plans"></div>
+    <button id="b_rzp" class="hide">Pay with Razorpay</button>
+    <button id="b_upi" class="alt hide">Pay by UPI</button>
+    <div class="err" id="e_main"></div>
+    <button class="link" id="b_out">Sign out</button>
+  </div>
+
+  <div id="s_upi" class="hide">
+    <h1>Pay <span id="u_amt"></span></h1>
+    <p class="sub" id="u_plan"></p>
+    <div id="qr"></div>
+    <div class="upi" id="u_vpa"></div>
+    <a id="u_link"><button class="alt">Open UPI app</button></a>
+    <label for="utr">UTR number from your payment</label>
+    <input id="utr" type="text" inputmode="numeric" placeholder="12-digit reference">
+    <label for="shot">Payment screenshot</label>
+    <input id="shot" type="file" accept="image/*">
+    <button id="b_submit">Submit for approval</button>
+    <button class="link" id="b_cancel">Back</button>
+    <div class="err" id="e_upi"></div>
+  </div>
+
+  <div id="s_done" class="hide">
+    <h1 id="d_title"></h1>
+    <p class="sub" id="d_msg"></p>
+    <button id="b_again">Back</button>
+  </div>
+
+  <p class="foot">SARVO &middot; Bengaluru</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+var sb = supabase.createClient("https://lzngbxgzbbbzbgmgyiix.supabase.co", "sb_publishable_S0U4zr4tdxmmOGCxpd2zjQ_-MXQacXX");
+var opts = null, plan = null, me = null;
+
+function show(id){
+  var all = ["s_login","s_code","s_main","s_upi","s_done"];
+  for (var i=0;i<all.length;i++){ document.getElementById(all[i]).classList.add("hide"); }
+  document.getElementById(id).classList.remove("hide");
+}
+function err(id, msg){ document.getElementById(id).textContent = msg || ""; }
+function money(n){ return "₹" + Number(n).toFixed(2); }
+
+document.getElementById("b_send").onclick = async function(){
+  var em = document.getElementById("email").value.trim();
+  if (!em) { err("e_login","Enter your email"); return; }
+  this.disabled = true; err("e_login","");
+  var r = await sb.auth.signInWithOtp({ email: em, options: { shouldCreateUser: false } });
+  this.disabled = false;
+  if (r.error){
+    err("e_login", r.error.message.indexOf("not found") > -1 || r.error.status === 400
+      ? "No SARVO account with that email. Sign up in the app first."
+      : r.error.message);
+    return;
+  }
+  document.getElementById("who").textContent = em;
+  show("s_code");
+};
+
+document.getElementById("b_back").onclick = function(){ err("e_code",""); show("s_login"); };
+
+document.getElementById("b_verify").onclick = async function(){
+  var em = document.getElementById("email").value.trim();
+  var tk = document.getElementById("code").value.trim();
+  if (!tk) { err("e_code","Enter the code"); return; }
+  this.disabled = true; err("e_code","");
+  var r = await sb.auth.verifyOtp({ email: em, token: tk, type: "email" });
+  this.disabled = false;
+  if (r.error){ err("e_code","That code is wrong or expired."); return; }
+  loadMain();
+};
+
+document.getElementById("b_out").onclick = async function(){
+  await sb.auth.signOut(); plan = null; show("s_login");
+};
+
+async function loadMain(){
+  show("s_main"); err("e_main","");
+  document.getElementById("plans").innerHTML = "";
+  document.getElementById("b_rzp").classList.add("hide");
+  document.getElementById("b_upi").classList.add("hide");
+
+  var mm = await sb.rpc("get_my_membership");
+  if (mm.error){ err("e_main", mm.error.message); return; }
+  me = mm.data;
+  document.getElementById("hello").textContent = me.name ? ("Hello, " + me.name) : "Membership";
+
+  var st = document.getElementById("status");
+  if (me.active){
+    st.innerHTML = "<span class='big ok'>Active</span>" + me.days_remaining +
+      " day(s) left · expires " + String(me.expires_at).slice(0,10);
+  } else {
+    st.innerHTML = "<span class='big'>No active membership</span>Choose a plan below.";
+  }
+
+  var pr = await sb.rpc("get_my_payment_request");
+  var box = document.getElementById("pending");
+  if (!pr.error && pr.data && pr.data.status === "pending"){
+    box.classList.remove("hide");
+    box.innerHTML = "<b>Payment waiting for approval</b><br>" + money(pr.data.amount) +
+      " · submitted " + String(pr.data.created_at).slice(0,10) +
+      "<br><small>You will be activated once admin approves.</small>";
+  } else { box.classList.add("hide"); }
+
+  var po = await sb.rpc("get_payment_options");
+  if (po.error){ err("e_main", po.error.message); return; }
+  opts = po.data;
+
+  if (opts.mode === "off"){
+    document.getElementById("plans").innerHTML =
+      "<div class='card'>" + (opts.message || "Payments are unavailable.") + "</div>";
+    return;
+  }
+
+  var html = "";
+  for (var i=0;i<opts.plans.length;i++){
+    var p = opts.plans[i];
+    html += "<div class='plan' data-id='" + p.plan_id + "' role='button' aria-selected='false'>" +
+      "<div><b>" + p.label + "</b><span class='tax'>" + money(p.taxable) +
+      " + GST " + money(p.total - p.taxable) + "</span></div>" +
+      "<div class='amt'>" + money(p.total) + "</div></div>";
+  }
+  document.getElementById("plans").innerHTML = html;
+
+  var nodes = document.querySelectorAll(".plan");
+  for (var j=0;j<nodes.length;j++){
+    nodes[j].onclick = function(){ pick(this.getAttribute("data-id")); };
+  }
+  if (opts.plans.length) pick(opts.plans[0].plan_id);
+}
+
+function pick(id){
+  plan = null;
+  for (var i=0;i<opts.plans.length;i++){ if (opts.plans[i].plan_id === id) plan = opts.plans[i]; }
+  var nodes = document.querySelectorAll(".plan");
+  for (var j=0;j<nodes.length;j++){
+    nodes[j].setAttribute("aria-selected", nodes[j].getAttribute("data-id") === id ? "true" : "false");
+  }
+  document.getElementById("b_rzp").classList.toggle("hide", !opts.razorpay);
+  document.getElementById("b_upi").classList.toggle("hide", !opts.manual);
+}
+
+document.getElementById("b_rzp").onclick = async function(){
+  if (!plan) return;
+  this.disabled = true; err("e_main","");
+  var r = await sb.functions.invoke("create-razorpay-order", { body: { plan_id: plan.plan_id } });
+  this.disabled = false;
+  if (r.error || !r.data || !r.data.ok){
+    err("e_main","Could not start the payment. Please try again or use UPI.");
+    return;
+  }
+  var d = r.data;
+  var rz = new Razorpay({
+    key: d.key_id, order_id: d.order_id, amount: d.amount, currency: "INR",
+    name: "SARVO", description: d.plan_label,
+    prefill: { email: document.getElementById("email").value.trim() },
+    theme: { color: "#0f766e" },
+    handler: function(){ activating(); }
+  });
+  rz.open();
+};
+
+function activating(){
+  document.getElementById("d_title").textContent = "Payment received";
+  document.getElementById("d_msg").textContent = "Activating your membership. This takes a few seconds.";
+  show("s_done");
+  setTimeout(loadMain, 6000);
+}
+
+document.getElementById("b_upi").onclick = function(){
+  if (!plan) return;
+  document.getElementById("u_amt").textContent = money(plan.total);
+  document.getElementById("u_plan").textContent = plan.label + " · pay the exact amount shown";
+  document.getElementById("u_vpa").textContent = opts.account.upi_id + " (" + opts.account.payee_name + ")";
+  document.getElementById("u_link").setAttribute("href", plan.upi_link);
+  var box = document.getElementById("qr"); box.innerHTML = "";
+  new QRCode(box, { text: plan.upi_link, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
+  document.getElementById("utr").value = "";
+  document.getElementById("shot").value = "";
+  err("e_upi","");
+  show("s_upi");
+};
+
+document.getElementById("b_cancel").onclick = function(){ show("s_main"); };
+
+document.getElementById("b_submit").onclick = async function(){
+  var utr = document.getElementById("utr").value.trim();
+  var f = document.getElementById("shot").files[0];
+  if (!utr){ err("e_upi","Enter the UTR number from your payment"); return; }
+  if (!f){ err("e_upi","Attach the payment screenshot"); return; }
+  if (f.size > 5 * 1024 * 1024){ err("e_upi","Screenshot must be under 5 MB"); return; }
+
+  this.disabled = true; err("e_upi","Uploading...");
+  var u = await sb.auth.getUser();
+  if (!u.data || !u.data.user){ this.disabled = false; err("e_upi","Session expired. Sign in again."); return; }
+  var uid = u.data.user.id;
+  var safe = f.name.replace(/[^a-zA-Z0-9._-]/g, "");
+  var path = uid + "/" + Date.now() + "_" + safe;
+
+  var up = await sb.storage.from("payment-proofs").upload(path, f, { contentType: f.type });
+  if (up.error){ this.disabled = false; err("e_upi","Upload failed. Try a smaller image."); return; }
+
+  var r = await sb.rpc("create_payment_request", {
+    p_plan_id: plan.plan_id, p_utr: utr, p_screenshot_path: path
+  });
+  this.disabled = false;
+  if (r.error){ err("e_upi", r.error.message); return; }
+
+  document.getElementById("d_title").textContent = "Submitted";
+  document.getElementById("d_msg").textContent =
+    "Your payment is with the admin for approval. You will be activated shortly.";
+  show("s_done");
+};
+
+document.getElementById("b_again").onclick = function(){ loadMain(); };
+
+(async function(){
+  var s = await sb.auth.getSession();
+  if (s.data && s.data.session){ loadMain(); } else { show("s_login"); }
+})();
+</script>
+</body>
+</html>
