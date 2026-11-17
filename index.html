@@ -168,8 +168,20 @@ async function loadMain(){
   if (!pr.error && pr.data && pr.data.status === "pending"){
     box.classList.remove("hide");
     box.innerHTML = "<b>Payment waiting for approval</b><br>" + money(pr.data.amount) +
-      " · submitted " + String(pr.data.created_at).slice(0,10) +
-      "<br><small>You will be activated once admin approves.</small>";
+      " \u00B7 submitted " + String(pr.data.created_at).slice(0,10) +
+      "<br><small>You will be activated once admin approves.</small>" +
+      "<button class='alt' id='b_edit'>Correct UTR or screenshot</button>" +
+      "<div id='editbox' class='hide'>" +
+      "<label for='e_utr'>UTR number</label>" +
+      "<input id='e_utr' type='text' inputmode='numeric'>" +
+      "<label for='e_shot'>New screenshot (leave empty to keep the old one)</label>" +
+      "<input id='e_shot' type='file' accept='image/*'>" +
+      "<button id='b_save'>Save changes</button>" +
+      "<div class='err' id='e_edit'></div></div>";
+    document.getElementById("b_edit").onclick = function(){
+      document.getElementById("editbox").classList.toggle("hide");
+    };
+    document.getElementById("b_save").onclick = saveEdit;
   } else { box.classList.add("hide"); }
 
   var po = await sb.rpc("get_payment_options");
@@ -268,7 +280,7 @@ document.getElementById("b_submit").onclick = async function(){
   var path = uid + "/" + Date.now() + "_" + safe;
 
   var up = await sb.storage.from("payment-proofs").upload(path, f, { contentType: f.type });
-  if (up.error){ this.disabled = false; err("e_upi","Upload failed. Try a smaller image."); return; }
+  if (up.error){ this.disabled = false; err("e_upi","Upload failed: " + up.error.message); return; }
 
   var r = await sb.rpc("create_payment_request", {
     p_plan_id: plan.plan_id, p_utr: utr, p_screenshot_path: path
@@ -283,6 +295,27 @@ document.getElementById("b_submit").onclick = async function(){
 };
 
 document.getElementById("b_again").onclick = function(){ loadMain(); };
+
+async function saveEdit(){
+  var utr = document.getElementById("e_utr").value.trim();
+  var f = document.getElementById("e_shot").files[0];
+  if (!utr){ err("e_edit","Enter the UTR number"); return; }
+  this.disabled = true; err("e_edit","Saving...");
+  var path = null;
+  if (f){
+    if (f.size > 5 * 1024 * 1024){ this.disabled = false; err("e_edit","Screenshot must be under 5 MB"); return; }
+    var u = await sb.auth.getUser();
+    var uid = u.data.user.id;
+    var safe = f.name.replace(/[^a-zA-Z0-9._-]/g, "");
+    path = uid + "/" + Date.now() + "_" + safe;
+    var up = await sb.storage.from("payment-proofs").upload(path, f, { contentType: f.type });
+    if (up.error){ this.disabled = false; err("e_edit","Upload failed: " + up.error.message); return; }
+  }
+  var r = await sb.rpc("update_my_payment_request", { p_utr: utr, p_screenshot_path: path });
+  this.disabled = false;
+  if (r.error){ err("e_edit", r.error.message); return; }
+  loadMain();
+}
 
 (async function(){
   var s = await sb.auth.getSession();
